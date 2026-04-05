@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-worker
+  namespace: __NAMESPACE__
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: workflow-worker
+  template:
+    metadata:
+      labels:
+        app: workflow-worker
+    spec:
+      containers:
+        - name: workflow-worker
+          image: __WORKFLOW_WORKER_IMAGE__
+          ports:
+            - containerPort: 9100
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dor-app-secrets
+                  key: DATABASE_URL
+            - name: TEMPORAL_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: dor-app-config
+                  key: TEMPORAL_ADDRESS
+            - name: TEMPORAL_TASK_QUEUE
+              valueFrom:
+                configMapKeyRef:
+                  name: dor-app-config
+                  key: TEMPORAL_TASK_QUEUE
+            - name: INVENTORY_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: dor-app-config
+                  key: INVENTORY_SERVICE_URL
+            - name: ROUTING_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: dor-app-config
+                  key: ROUTING_SERVICE_URL
+            - name: DEFAULT_SLA_DAYS
+              valueFrom:
+                configMapKeyRef:
+                  name: dor-app-config
+                  key: DEFAULT_SLA_DAYS
+          readinessProbe:
+            tcpSocket:
+              port: 9100
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 9100
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi

@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: routing-engine
+  namespace: __NAMESPACE__
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: routing-engine
+  template:
+    metadata:
+      labels:
+        app: routing-engine
+    spec:
+      containers:
+        - name: routing-engine
+          image: __ROUTING_ENGINE_IMAGE__
+          ports:
+            - containerPort: 8002
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: routing-engine
+  namespace: __NAMESPACE__
+spec:
+  selector:
+    app: routing-engine
+  ports:
+    - name: http
+      port: 8002
+      targetPort: 8002

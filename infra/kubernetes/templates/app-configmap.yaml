@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dor-app-config
+  namespace: __NAMESPACE__
+data:
+  TEMPORAL_ADDRESS: temporal:7233
+  TEMPORAL_TASK_QUEUE: order-routing-task-queue
+  INVENTORY_SERVICE_URL: http://inventory-service:8001
+  ROUTING_SERVICE_URL: http://routing-engine:8002
+  DEFAULT_SLA_DAYS: "3"

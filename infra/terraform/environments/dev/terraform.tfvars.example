@@ -1,0 +1,30 @@
+aws_region = "us-east-1"
+
+availability_zones = [
+  "us-east-1a",
+  "us-east-1b",
+]
+
+public_subnet_cidrs = [
+  "10.20.0.0/24",
+  "10.20.1.0/24",
+]
+
+private_app_subnet_cidrs = [
+  "10.20.10.0/24",
+  "10.20.11.0/24",
+]
+
+private_data_subnet_cidrs = [
+  "10.20.20.0/24",
+  "10.20.21.0/24",
+]
+
+db_password = "replace-me-before-apply"
+db_backup_retention_period = 1
+
+eks_kubernetes_version = "1.34"
+eks_node_instance_types = ["t3.micro"]
+eks_node_desired_size = 1
+eks_node_min_size = 1
+eks_node_max_size = 1

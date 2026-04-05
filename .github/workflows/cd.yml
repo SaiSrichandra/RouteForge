@@ -1,0 +1,143 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Optional image tag override. Defaults to the triggering commit SHA.
+        required: false
+        type: string
+      apply_seed_job:
+        description: Run the in-cluster seed job during deploy.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cd-${{ github.event.workflow_run.head_branch || github.ref_name || 'manual' }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-eks:
+    name: Deploy To EKS
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        (
+          github.event.workflow_run.head_branch == 'main' ||
+          github.event.workflow_run.head_branch == 'master'
+        )
+      )
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID || '565582985513' }}
+      EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'dor-dev' }}
+      EKS_NAMESPACE: ${{ vars.EKS_NAMESPACE || 'dor' }}
+      RDS_ENDPOINT: ${{ vars.RDS_ENDPOINT || 'dor-dev-postgres.c29icc2s04nd.us-east-1.rds.amazonaws.com' }}
+      WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+      CURRENT_SHA: ${{ github.sha }}
+      INPUT_TAG: ${{ inputs.image_tag }}
+      APPLY_SEED_INPUT: ${{ inputs.apply_seed_job }}
+      DOR_DB_PASSWORD: ${{ secrets.DOR_DB_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.34.0
+
+      - name: Validate required settings
+        shell: pwsh
+        run: |
+          if (-not $env:DOR_DB_PASSWORD) {
+            throw "Missing DOR_DB_PASSWORD secret."
+          }
+
+      - name: Resolve deployment metadata
+        id: meta
+        shell: pwsh
+        run: |
+          $imageTag = if ($env:INPUT_TAG) { $env:INPUT_TAG } elseif ($env:WORKFLOW_SHA) { $env:WORKFLOW_SHA } else { $env:CURRENT_SHA }
+          $applySeedJob = if ($env:APPLY_SEED_INPUT -eq "true") { "true" } else { "false" }
+
+          "image_tag=$imageTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "apply_seed_job=$applySeedJob" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Push images to ECR
+        shell: pwsh
+        run: |
+          ./scripts/push_images.ps1 `
+            -AwsRegion $env:AWS_REGION `
+            -AwsAccountId $env:AWS_ACCOUNT_ID `
+            -Tag "${{ steps.meta.outputs.image_tag }}"
+
+      - name: Deploy workloads to EKS
+        shell: pwsh
+        run: |
+          $params = @{
+            AwsRegion = $env:AWS_REGION
+            ClusterName = $env:EKS_CLUSTER_NAME
+            Namespace = $env:EKS_NAMESPACE
+            AwsAccountId = $env:AWS_ACCOUNT_ID
+            DbPassword = $env:DOR_DB_PASSWORD
+            RdsEndpoint = $env:RDS_ENDPOINT
+            ImageTag = "${{ steps.meta.outputs.image_tag }}"
+          }
+
+          if ("${{ steps.meta.outputs.apply_seed_job }}" -eq "true") {
+            ./scripts/deploy_eks.ps1 @params -ApplySeedJob
+          }
+          else {
+            ./scripts/deploy_eks.ps1 @params
+          }
+
+      - name: Verify rollout
+        shell: pwsh
+        run: |
+          $deployments = @(
+            "temporal-postgresql",
+            "temporal",
+            "temporal-ui",
+            "prometheus",
+            "grafana",
+            "inventory-service",
+            "routing-engine",
+            "order-api",
+            "workflow-worker",
+            "dashboard"
+          )
+
+          foreach ($deployment in $deployments) {
+            kubectl rollout status deployment/$deployment -n $env:EKS_NAMESPACE --timeout=10m
+            if ($LASTEXITCODE -ne 0) {
+              throw "Rollout failed for deployment/$deployment"
+            }
+          }
+
+      - name: Show public services
+        shell: pwsh
+        run: |
+          kubectl get svc -n $env:EKS_NAMESPACE
