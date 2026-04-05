@@ -41,15 +41,16 @@ jobs:
       )
     runs-on: ubuntu-latest
     env:
-      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID || '565582985513' }}
-      EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'dor-dev' }}
-      EKS_NAMESPACE: ${{ vars.EKS_NAMESPACE || 'dor' }}
-      RDS_ENDPOINT: ${{ vars.RDS_ENDPOINT || 'dor-dev-postgres.c29icc2s04nd.us-east-1.rds.amazonaws.com' }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+      EKS_NAMESPACE: ${{ vars.EKS_NAMESPACE }}
+      RDS_ENDPOINT: ${{ vars.RDS_ENDPOINT }}
       WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
       CURRENT_SHA: ${{ github.sha }}
       INPUT_TAG: ${{ inputs.image_tag }}
       APPLY_SEED_INPUT: ${{ inputs.apply_seed_job }}
+      AWS_GITHUB_ACTIONS_ROLE_ARN: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
       DOR_DB_PASSWORD: ${{ secrets.DOR_DB_PASSWORD }}
 
     steps:
@@ -62,7 +63,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
 
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
@@ -72,8 +73,26 @@ jobs:
       - name: Validate required settings
         shell: pwsh
         run: |
+          $requiredVariables = @(
+            "AWS_REGION",
+            "AWS_ACCOUNT_ID",
+            "EKS_CLUSTER_NAME",
+            "EKS_NAMESPACE",
+            "RDS_ENDPOINT"
+          )
+
+          foreach ($name in $requiredVariables) {
+            if (-not (Get-Item -Path "Env:$name" -ErrorAction SilentlyContinue)?.Value) {
+              throw "Missing required repository variable: $name"
+            }
+          }
+
           if (-not $env:DOR_DB_PASSWORD) {
-            throw "Missing DOR_DB_PASSWORD secret."
+            throw "Missing required repository secret: DOR_DB_PASSWORD"
+          }
+
+          if (-not $env:AWS_GITHUB_ACTIONS_ROLE_ARN) {
+            throw "Missing required repository secret: AWS_GITHUB_ACTIONS_ROLE_ARN"
           }
 
       - name: Resolve deployment metadata
