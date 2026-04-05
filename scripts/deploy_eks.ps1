@@ -9,6 +9,9 @@ param(
     [string]$DbName = "order_routing",
     [string]$DbUser = "dor_admin",
     [string]$ImageTag = "latest",
+    [string]$TemporalUiPublicUrl = $env:TEMPORAL_UI_PUBLIC_URL,
+    [string]$GrafanaPublicUrl = $env:GRAFANA_PUBLIC_URL,
+    [string]$PrometheusPublicUrl = $env:PROMETHEUS_PUBLIC_URL,
     [switch]$ApplySeedJob
 )
 
@@ -31,6 +34,31 @@ $encodedDbUser = [System.Uri]::EscapeDataString($DbUser)
 $encodedDbPassword = [System.Uri]::EscapeDataString($DbPassword)
 $databaseUrl = "postgresql+psycopg://${encodedDbUser}:${encodedDbPassword}@${RdsEndpoint}:5432/${DbName}?sslmode=require"
 
+function Get-ServicePublicUrl {
+    param(
+        [string]$ServiceName,
+        [int]$Port,
+        [int]$TimeoutSeconds = 180
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
+    while ((Get-Date) -lt $deadline) {
+        $hostName = kubectl get svc $ServiceName -n $Namespace -o jsonpath="{.status.loadBalancer.ingress[0].hostname}" 2>$null
+        if (-not $hostName) {
+            $hostName = kubectl get svc $ServiceName -n $Namespace -o jsonpath="{.status.loadBalancer.ingress[0].ip}" 2>$null
+        }
+
+        if ($hostName) {
+            return "http://${hostName}:${Port}"
+        }
+
+        Start-Sleep -Seconds 5
+    }
+
+    return ""
+}
+
 $replacements = @{
     "__NAMESPACE__" = $Namespace
     "__DATABASE_URL__" = $databaseUrl
@@ -41,6 +69,9 @@ $replacements = @{
     "__ROUTING_ENGINE_IMAGE__" = "$registry/dor-dev/routing-engine:$ImageTag"
     "__WORKFLOW_WORKER_IMAGE__" = "$registry/dor-dev/workflow-worker:$ImageTag"
     "__DASHBOARD_IMAGE__" = "$registry/dor-dev/dashboard:$ImageTag"
+    "__TEMPORAL_UI_PUBLIC_URL__" = ""
+    "__GRAFANA_PUBLIC_URL__" = ""
+    "__PROMETHEUS_PUBLIC_URL__" = ""
 }
 
 function Apply-Template {
@@ -107,13 +138,30 @@ $deploymentTemplates = @(
     "inventory-service.yaml",
     "routing-engine.yaml",
     "order-api.yaml",
-    "workflow-worker.yaml",
-    "dashboard.yaml"
+    "workflow-worker.yaml"
 )
 
 foreach ($template in $deploymentTemplates) {
     Apply-Template -FileName $template
 }
+
+if (-not $TemporalUiPublicUrl) {
+    $TemporalUiPublicUrl = Get-ServicePublicUrl -ServiceName "temporal-ui" -Port 8080
+}
+
+if (-not $GrafanaPublicUrl) {
+    $GrafanaPublicUrl = Get-ServicePublicUrl -ServiceName "grafana" -Port 3000
+}
+
+if (-not $PrometheusPublicUrl) {
+    $PrometheusPublicUrl = Get-ServicePublicUrl -ServiceName "prometheus" -Port 9090
+}
+
+$replacements["__TEMPORAL_UI_PUBLIC_URL__"] = $TemporalUiPublicUrl
+$replacements["__GRAFANA_PUBLIC_URL__"] = $GrafanaPublicUrl
+$replacements["__PROMETHEUS_PUBLIC_URL__"] = $PrometheusPublicUrl
+
+Apply-Template -FileName "dashboard.yaml"
 
 if ($ApplySeedJob) {
     kubectl delete job dor-seed-data -n $Namespace --ignore-not-found
@@ -131,6 +179,15 @@ kubectl rollout restart deployment workflow-worker -n $Namespace
 kubectl rollout restart deployment dashboard -n $Namespace
 
 Write-Host "Deployment submitted to namespace '$Namespace'."
+if ($TemporalUiPublicUrl) {
+    Write-Host "Temporal UI: $TemporalUiPublicUrl"
+}
+if ($GrafanaPublicUrl) {
+    Write-Host "Grafana: $GrafanaPublicUrl"
+}
+if ($PrometheusPublicUrl) {
+    Write-Host "Prometheus: $PrometheusPublicUrl"
+}
 Write-Host "Check rollout progress with:"
 Write-Host "kubectl get pods -n $Namespace"
 Write-Host "kubectl get svc -n $Namespace"

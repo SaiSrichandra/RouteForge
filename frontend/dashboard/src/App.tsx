@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Route, Routes, useLocation, useParams } from "react-router-dom";
 
 import {
@@ -15,35 +15,34 @@ import {
   fetchRoutingMetrics,
   fetchWarehouses,
 } from "./api";
-import type {
-  CandidatePlan,
-  Order,
-  ServiceMetrics
-} from "./types";
+import type { CandidatePlan, Order, ServiceMetrics, Warehouse } from "./types";
+
+const runtimeConfig = window.__ROUTEFORGE_CONFIG__;
+const isLocalDev = window.location.hostname === "localhost" && window.location.port === "5173";
 
 const temporalUiUrl =
-  import.meta.env.VITE_TEMPORAL_UI_URL ??
-  (window.location.port === "5173" ? "http://localhost:8088" : `${window.location.origin}/temporal/`);
+  runtimeConfig?.temporalUiUrl || import.meta.env.VITE_TEMPORAL_UI_URL || (isLocalDev ? "http://localhost:8088" : null);
 
 const grafanaUrl =
-  import.meta.env.VITE_GRAFANA_URL ??
-  (window.location.port === "5173" ? "http://localhost:3001" : "#");
+  runtimeConfig?.grafanaUrl || import.meta.env.VITE_GRAFANA_URL || (isLocalDev ? "http://localhost:3001" : null);
 
 const prometheusUrl =
-  import.meta.env.VITE_PROMETHEUS_URL ??
-  (window.location.port === "5173" ? "http://localhost:9090" : "#");
+  runtimeConfig?.prometheusUrl || import.meta.env.VITE_PROMETHEUS_URL || (isLocalDev ? "http://localhost:9090" : null);
 
-function usePolling<T>(loader: () => Promise<T>, deps: unknown[] = [], intervalMs = 5000) {
+function usePolling<T>(loader: () => Promise<T>, deps: readonly unknown[] = [], intervalMs = 5000) {
+  const loaderRef = useRef(loader);
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  loaderRef.current = loader;
 
   useEffect(() => {
     let active = true;
 
     async function run() {
       try {
-        const next = await loader();
+        const next = await loaderRef.current();
         if (!active) {
           return;
         }
@@ -70,7 +69,7 @@ function usePolling<T>(loader: () => Promise<T>, deps: unknown[] = [], intervalM
       active = false;
       window.clearInterval(timer);
     };
-  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [intervalMs, ...deps]);
 
   return { data, loading, error };
 }
@@ -79,9 +78,11 @@ function formatCurrency(value: string | null) {
   if (!value) {
     return "Pending";
   }
+
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
+    maximumFractionDigits: 2,
   }).format(Number(value));
 }
 
@@ -89,25 +90,13 @@ function formatTime(value: string | null) {
   if (!value) {
     return "N/A";
   }
+
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
-}
-
-function statusTone(status: string) {
-  switch (status) {
-    case "confirmed":
-      return "status status-green";
-    case "failed":
-      return "status status-red";
-    case "routing":
-      return "status status-amber";
-    default:
-      return "status status-slate";
-  }
 }
 
 function eventLabel(eventType: string) {
@@ -117,83 +106,189 @@ function eventLabel(eventType: string) {
     .join(" ");
 }
 
-function AppShell({ children }: { children: React.ReactNode }) {
+function titleCase(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .split(" ")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function statusTone(status: string) {
+  switch (status) {
+    case "confirmed":
+      return "status status-success";
+    case "failed":
+      return "status status-danger";
+    case "routing":
+      return "status status-warning";
+    default:
+      return "status status-neutral";
+  }
+}
+
+function compactId(value: string | null) {
+  if (!value) {
+    return "Pending";
+  }
+  return value.length <= 14 ? value : `${value.slice(0, 8)}...${value.slice(-4)}`;
+}
+
+function candidateWarehouseLabel(plan: CandidatePlan | undefined) {
+  if (!plan) {
+    return "Awaiting plan";
+  }
+
+  return plan.warehouses_used.length === 1 ? plan.warehouses_used[0] : `${plan.warehouses_used.length} warehouses`;
+}
+
+function Shell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
+  const currentView = location.pathname === "/" ? "Orders" : titleCase(location.pathname.slice(1));
 
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <p className="eyebrow">Distributed Fulfillment</p>
-          <h1>Order Routing Console</h1>
-          <p className="muted">
-            Watch Routing Choices, Workflow Retries, and inventory changes in one place.
-          </p>
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand-block">
+          <div className="brand-mark">RF</div>
+          <div>
+            <p className="kicker">RouteForge</p>
+            <h1>Operations Console</h1>
+          </div>
         </div>
 
-        <nav className="nav">
-          <NavLink to="/" end className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+        <nav className="topnav" aria-label="Primary">
+          <NavLink to="/" end className={({ isActive }) => (isActive ? "topnav-link active" : "topnav-link")}>
             Orders
           </NavLink>
-          <NavLink to="/inventory" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+          <NavLink to="/inventory" className={({ isActive }) => (isActive ? "topnav-link active" : "topnav-link")}>
             Inventory
           </NavLink>
-          <NavLink to="/health" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-            Health
+          <NavLink to="/health" className={({ isActive }) => (isActive ? "topnav-link active" : "topnav-link")}>
+            Services
           </NavLink>
         </nav>
 
-        <div className="sidebar-card">
-          <p className="sidebar-label">Live demo routes</p>
-          <p className="sidebar-copy">Normal, rollback, and retry scenarios are all available from the API.</p>
-          <a className="sidebar-link" href={temporalUiUrl} target="_blank" rel="noreferrer">
-            Open Temporal UI
-          </a>
-          {grafanaUrl !== "#" ? (
-            <a className="sidebar-link" href={grafanaUrl} target="_blank" rel="noreferrer">
-              Open Grafana
+        <div className="utility-actions">
+          {temporalUiUrl ? (
+            <a className="utility-link" href={temporalUiUrl} target="_blank" rel="noreferrer">
+              Temporal
+            </a>
+          ) : null}
+          {grafanaUrl ? (
+            <a className="utility-link" href={grafanaUrl} target="_blank" rel="noreferrer">
+              Grafana
+            </a>
+          ) : null}
+          {prometheusUrl ? (
+            <a className="utility-link" href={prometheusUrl} target="_blank" rel="noreferrer">
+              Prometheus
             </a>
           ) : null}
         </div>
+      </header>
 
-        <div className="sidebar-foot">
-          <span>View</span>
-          <strong>{location.pathname === "/" ? "orders" : location.pathname.replace("/", "")}</strong>
-        </div>
-      </aside>
+      <main className="workspace">
+        <section className="hero-banner">
+          <div>
+            <p className="hero-label">Live View</p>
+            <h2>{currentView}</h2>
+            <p className="hero-copy">
+              Real-time visibility into routing decisions, workflow progression, inventory posture, and service health.
+            </p>
+          </div>
+          <div className="hero-pill">
+            <span className="hero-pill-dot" />
+            Auto-refreshing operational data
+          </div>
+        </section>
 
-      <main className="content">{children}</main>
+        {children}
+      </main>
     </div>
   );
 }
 
-function SummaryStrip({ orders }: { orders: Order[] }) {
-  const stats = useMemo(() => {
-    const confirmed = orders.filter((order) => order.status === "confirmed").length;
-    const failed = orders.filter((order) => order.status === "failed").length;
-    const split = orders.filter(
-      (order) => (order.fulfillment_plan?.selected_plan.warehouses_used.length ?? 0) > 1,
-    ).length;
-    return { total: orders.length, confirmed, failed, split };
-  }, [orders]);
-
+function PageIntro({
+  title,
+  subtitle,
+  action,
+}: {
+  title: string;
+  subtitle: string;
+  action?: React.ReactNode;
+}) {
   return (
-    <section className="summary-strip">
-      <MetricCard label="Recent Orders" value={String(stats.total)} note="Latest workflow-backed submissions" />
-      <MetricCard label="Confirmed" value={String(stats.confirmed)} note="Successfully orchestrated" />
-      <MetricCard label="Failed" value={String(stats.failed)} note="Useful for rollback demos" />
-      <MetricCard label="Split Shipments" value={String(stats.split)} note="Orders using multiple warehouses" />
+    <section className="page-intro">
+      <div>
+        <h3>{title}</h3>
+        <p>{subtitle}</p>
+      </div>
+      {action}
     </section>
   );
 }
 
-function MetricCard({ label, value, note }: { label: string; value: string; note: string }) {
+function EmptyState({ title, message }: { title: string; message: string }) {
   return (
-    <div className="metric-card">
-      <p>{label}</p>
+    <section className="empty-state">
+      <h3>{title}</h3>
+      <p>{message}</p>
+    </section>
+  );
+}
+
+function StatCard({ label, value, note }: { label: string; value: string; note: string }) {
+  return (
+    <article className="stat-card">
+      <span>{label}</span>
       <strong>{value}</strong>
-      <span>{note}</span>
-    </div>
+      <p>{note}</p>
+    </article>
+  );
+}
+
+function SectionCard({
+  title,
+  subtitle,
+  action,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="section-card">
+      <div className="section-head">
+        <div>
+          <h4>{title}</h4>
+          {subtitle ? <p>{subtitle}</p> : null}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function OrdersOverview({ orders }: { orders: Order[] }) {
+  const confirmed = orders.filter((order) => order.status === "confirmed").length;
+  const failed = orders.filter((order) => order.status === "failed").length;
+  const inFlight = orders.filter((order) => order.status === "pending" || order.status === "routing").length;
+  const splitPlans = orders.filter(
+    (order) => (order.fulfillment_plan?.selected_plan.warehouses_used.length ?? 0) > 1,
+  ).length;
+
+  return (
+    <section className="stats-grid">
+      <StatCard label="Orders In View" value={String(orders.length)} note="Most recent workflow-backed submissions" />
+      <StatCard label="Confirmed" value={String(confirmed)} note="Orders completed without compensation" />
+      <StatCard label="Needs Attention" value={String(failed)} note="Failed workflows or payment rollbacks" />
+      <StatCard label="Split Plans" value={String(splitPlans)} note="Orders routed across multiple warehouses" />
+      <StatCard label="In Flight" value={String(inFlight)} note="Orders still awaiting final workflow outcome" />
+    </section>
   );
 }
 
@@ -201,61 +296,117 @@ function OrdersPage() {
   const { data: orders, loading, error } = usePolling(() => fetchOrders(30), [], 4000);
 
   if (loading) {
-    return <PageState title="Loading orders" message="Pulling recent workflow-backed orders from the API." />;
+    return <EmptyState title="Loading orders" message="Fetching the latest workflow-backed order activity." />;
   }
 
-  if (error || !orders) {
-    return <PageState title="Orders unavailable" message={error ?? "Order data could not be loaded."} />;
+  if (!orders || error) {
+    return <EmptyState title="Orders unavailable" message={error ?? "Order data could not be loaded."} />;
   }
+
+  const failedOrders = orders.filter((order) => order.status === "failed").slice(0, 5);
+  const newestOrder = orders[0];
 
   return (
     <>
-      <HeaderBlock
-        title="Orders"
-        subtitle="Recent orders with routing cost, ETA, workflow status, and fulfillment plan selection."
+      <PageIntro
+        title="Order Flow"
+        subtitle="Track order state, routing choices, and shipment creation from one operational surface."
       />
-      <SummaryStrip orders={orders} />
-      <section className="orders-grid">
-        <div className="panel">
-          <div className="panel-head">
-            <h2>Recent Orders</h2>
-            <span>{orders.length} loaded</span>
-          </div>
 
-          <div className="order-list">
+      <OrdersOverview orders={orders} />
+
+      <section className="layout-grid layout-grid-orders">
+        <SectionCard title="Recent Orders" subtitle={`${orders.length} records shown`}>
+          <div className="list-grid">
             {orders.map((order) => {
-              const warehouseCount = order.fulfillment_plan?.selected_plan.warehouses_used.length ?? 0;
+              const selectedPlan = order.fulfillment_plan?.selected_plan;
               return (
-                <Link key={order.id} className="order-row" to={`/orders/${order.id}`}>
-                  <div>
-                    <div className="order-row-top">
-                      <strong>{order.id.slice(0, 8)}</strong>
+                <Link key={order.id} className="order-list-item" to={`/orders/${order.id}`}>
+                  <div className="order-list-main">
+                    <div className="order-list-top">
+                      <strong>{compactId(order.id)}</strong>
                       <span className={statusTone(order.status)}>{order.status}</span>
                     </div>
                     <p>{order.customer_id}</p>
                   </div>
-                  <div className="order-row-metrics">
-                    <span>{formatCurrency(order.total_cost)}</span>
-                    <span>{warehouseCount || "?"} wh</span>
-                    <span>{order.eta_days ? `${order.eta_days}d ETA` : "Calculating"}</span>
-                  </div>
+
+                  <dl className="order-list-meta">
+                    <div>
+                      <dt>Route</dt>
+                      <dd>{candidateWarehouseLabel(selectedPlan)}</dd>
+                    </div>
+                    <div>
+                      <dt>Total</dt>
+                      <dd>{formatCurrency(order.total_cost)}</dd>
+                    </div>
+                    <div>
+                      <dt>ETA</dt>
+                      <dd>{order.eta_days ? `${order.eta_days}d` : "Pending"}</dd>
+                    </div>
+                    <div>
+                      <dt>Updated</dt>
+                      <dd>{formatTime(order.updated_at ?? order.created_at)}</dd>
+                    </div>
+                  </dl>
                 </Link>
               );
             })}
           </div>
-        </div>
+        </SectionCard>
 
-        <div className="panel panel-hint">
-          <h2>What recruiters should notice</h2>
-          <p>
-            Each order is more than a database row. The selected plan, workflow timeline, and shipment records all
-            come from the orchestrated backend flow.
-          </p>
-          <ul className="flat-list">
-            <li>Routing decisions remain explainable through stored candidate plans.</li>
-            <li>Failures leave a visible audit trail instead of disappearing into logs.</li>
-            <li>Retry and compensation behavior is demoable with deterministic scenarios.</li>
-          </ul>
+        <div className="stack-grid">
+          <SectionCard
+            title="Latest Activity"
+            subtitle="Fast summary of the most recently submitted order"
+            action={
+              newestOrder ? (
+                <Link className="text-action" to={`/orders/${newestOrder.id}`}>
+                  Open detail
+                </Link>
+              ) : null
+            }
+          >
+            {newestOrder ? (
+              <div className="snapshot-card">
+                <div className="snapshot-row">
+                  <span>Customer</span>
+                  <strong>{newestOrder.customer_id}</strong>
+                </div>
+                <div className="snapshot-row">
+                  <span>Status</span>
+                  <span className={statusTone(newestOrder.status)}>{newestOrder.status}</span>
+                </div>
+                <div className="snapshot-row">
+                  <span>Workflow</span>
+                  <strong>{compactId(newestOrder.workflow_id)}</strong>
+                </div>
+                <div className="snapshot-row">
+                  <span>Destination</span>
+                  <strong>{newestOrder.destination_zone}</strong>
+                </div>
+              </div>
+            ) : (
+              <p className="subtle-copy">No recent orders available.</p>
+            )}
+          </SectionCard>
+
+          <SectionCard title="Attention Queue" subtitle="Recent failures and rollbacks that need review">
+            {failedOrders.length > 0 ? (
+              <div className="compact-list">
+                {failedOrders.map((order) => (
+                  <Link key={order.id} className="compact-item" to={`/orders/${order.id}`}>
+                    <div>
+                      <strong>{order.customer_id}</strong>
+                      <p>{compactId(order.id)}</p>
+                    </div>
+                    <span className={statusTone(order.status)}>{order.status}</span>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="subtle-copy">No failed orders in the current window.</p>
+            )}
+          </SectionCard>
         </div>
       </section>
     </>
@@ -264,233 +415,279 @@ function OrdersPage() {
 
 function OrderDetailPage() {
   const { orderId } = useParams();
-  const { data: order, loading: orderLoading, error: orderError } = usePolling(
-    () => fetchOrder(orderId!),
-    [orderId],
-    3500,
-  );
-  const { data: events, loading: eventsLoading } = usePolling(() => fetchOrderEvents(orderId!), [orderId], 3500);
-  const { data: shipments, loading: shipmentsLoading } = usePolling(
-    () => fetchOrderShipments(orderId!),
-    [orderId],
-    3500,
-  );
+  const { data: order, loading: orderLoading, error: orderError } = usePolling(() => fetchOrder(orderId!), [orderId], 3500);
+  const { data: events } = usePolling(() => fetchOrderEvents(orderId!), [orderId], 3500);
+  const { data: shipments } = usePolling(() => fetchOrderShipments(orderId!), [orderId], 3500);
 
   if (!orderId) {
-    return <PageState title="No order selected" message="Choose an order from the list to inspect its workflow." />;
+    return <EmptyState title="No order selected" message="Select an order to inspect its routing and workflow data." />;
   }
 
   if (orderLoading || !order) {
-    return <PageState title="Loading order detail" message={orderError ?? "Fetching fulfillment details."} />;
+    return <EmptyState title="Loading order" message={orderError ?? "Fetching order detail and workflow history."} />;
   }
 
   const selectedPlan = order.fulfillment_plan?.selected_plan;
-  const groupedAllocations = selectedPlan?.allocations.reduce<Record<string, CandidatePlan["allocations"]>>(
-    (acc, allocation) => {
-      const list = acc[allocation.code] ?? [];
-      list.push(allocation);
-      acc[allocation.code] = list;
+  const candidatePlans = order.fulfillment_plan?.candidate_plans ?? [];
+  const groupedAllocations =
+    selectedPlan?.allocations.reduce<Record<string, CandidatePlan["allocations"]>>((acc, allocation) => {
+      const current = acc[allocation.code] ?? [];
+      current.push(allocation);
+      acc[allocation.code] = current;
       return acc;
-    },
-    {},
-  );
+    }, {}) ?? {};
 
   return (
     <>
-      <HeaderBlock
-        title={`Order ${order.id.slice(0, 8)}`}
-        subtitle="Selected plan, candidate alternatives, workflow events, and shipment artifacts."
+      <PageIntro
+        title={`Order ${compactId(order.id)}`}
+        subtitle="Routing context, workflow execution trail, and shipment outputs."
         action={
-          <Link className="ghost-link" to="/">
-            Back to Orders
+          <Link className="text-action" to="/">
+            Back to orders
           </Link>
         }
       />
 
-      <section className="detail-hero">
-        <div className="hero-card">
-          <p className="eyebrow">Current Status</p>
-          <div className="hero-inline">
-            <span className={statusTone(order.status)}>{order.status}</span>
-            <span>{formatCurrency(order.total_cost)}</span>
-            <span>{order.eta_days ? `${order.eta_days} day ETA` : "Pending ETA"}</span>
-          </div>
-          <p className="muted">
-            Destination zone: <strong>{order.destination_zone}</strong> · Workflow:{" "}
-            <strong>{order.workflow_id ?? "pending"}</strong>
-          </p>
-        </div>
-
-        <div className="hero-card">
-          <p className="eyebrow">Order Payload</p>
-          <div className="item-stack">
-            {order.items.map((item) => (
-              <div className="item-pill" key={item.id}>
-                <strong>{item.sku}</strong>
-                <span>{item.quantity} units</span>
-                <span>{formatCurrency(item.unit_price)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="hero-card">
-          <p className="eyebrow">Fulfillment Posture</p>
-          <div className="hero-inline">
-            <span>{selectedPlan?.warehouses_used.length ?? 0} warehouses</span>
-            <span>{selectedPlan?.split_count ?? 0} splits</span>
-            <span>{selectedPlan?.sla_met ? "SLA met" : "Fallback used"}</span>
-          </div>
-          <p className="muted">
-            Alternative candidate plans are kept in the order payload to make tradeoffs explainable.
-          </p>
-        </div>
+      <section className="stats-grid detail-stats">
+        <StatCard label="Status" value={titleCase(order.status)} note={`Workflow ${compactId(order.workflow_id)}`} />
+        <StatCard label="Total Cost" value={formatCurrency(order.total_cost)} note={`Created ${formatTime(order.created_at)}`} />
+        <StatCard label="ETA" value={order.eta_days ? `${order.eta_days} days` : "Pending"} note={`Zone ${order.destination_zone}`} />
+        <StatCard
+          label="Route Shape"
+          value={`${selectedPlan?.warehouses_used.length ?? 0} warehouse(s)`}
+          note={order.fallback_triggered ? "Fallback triggered" : "Primary routing path"}
+        />
       </section>
 
-      <section className="detail-grid">
-        <div className="panel">
-          <div className="panel-head">
-            <h2>Selected Fulfillment Plan</h2>
-            <span>{selectedPlan ? `${selectedPlan.warehouses_used.join(", ")} chosen` : "Not ready"}</span>
-          </div>
+      <section className="layout-grid layout-grid-detail">
+        <SectionCard title="Selected Fulfillment Plan" subtitle={selectedPlan ? "Chosen route and allocation breakdown" : "Plan not available yet"}>
           {selectedPlan ? (
             <>
-              <div className="plan-metrics">
-                <MetricCard label="Shipping Cost" value={formatCurrency(selectedPlan.shipping_cost)} note="Base + multiplier" />
-                <MetricCard label="Total Score" value={selectedPlan.total_score} note="Cost + split + load + delay" />
-                <MetricCard label="Load Penalty" value={selectedPlan.load_penalty} note="Bias away from hot warehouses" />
+              <div className="plan-summary">
+                <div className="plan-metric">
+                  <span>Shipping cost</span>
+                  <strong>{formatCurrency(selectedPlan.shipping_cost)}</strong>
+                </div>
+                <div className="plan-metric">
+                  <span>Total score</span>
+                  <strong>{selectedPlan.total_score}</strong>
+                </div>
+                <div className="plan-metric">
+                  <span>Load penalty</span>
+                  <strong>{selectedPlan.load_penalty}</strong>
+                </div>
+                <div className="plan-metric">
+                  <span>SLA</span>
+                  <strong>{selectedPlan.sla_met ? "Met" : "Missed"}</strong>
+                </div>
               </div>
+
               <div className="allocation-grid">
-                {Object.entries(groupedAllocations ?? {}).map(([code, allocations]) => (
-                  <div className="allocation-card" key={code}>
-                    <h3>{code}</h3>
+                {Object.entries(groupedAllocations).map(([code, allocations]) => (
+                  <article className="allocation-card" key={code}>
+                    <h5>{code}</h5>
                     {allocations.map((allocation) => (
                       <div className="allocation-row" key={`${allocation.code}-${allocation.sku}`}>
                         <span>{allocation.sku}</span>
                         <strong>{allocation.quantity}</strong>
                       </div>
                     ))}
-                  </div>
+                  </article>
                 ))}
               </div>
             </>
           ) : (
-            <p className="muted">The workflow has not produced a fulfillment plan yet.</p>
+            <p className="subtle-copy">The workflow has not stored a fulfillment plan yet.</p>
           )}
-        </div>
+        </SectionCard>
 
-        <div className="panel">
-          <div className="panel-head">
-            <h2>Workflow Timeline</h2>
-            <span>{eventsLoading ? "Refreshing" : `${events?.length ?? 0} events`}</span>
-          </div>
-          <div className="timeline">
-            {(events ?? []).map((event) => (
-              <div className="timeline-row" key={event.id}>
-                <div className="timeline-dot" />
+        <SectionCard title="Order Payload" subtitle={`${order.items.length} line item(s)`}>
+          <div className="compact-list">
+            {order.items.map((item) => (
+              <div className="compact-item static" key={item.id}>
                 <div>
-                  <div className="timeline-head">
+                  <strong>{item.sku}</strong>
+                  <p>{item.quantity} unit(s)</p>
+                </div>
+                <strong>{formatCurrency(item.unit_price)}</strong>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Workflow Timeline" subtitle={`${events?.length ?? 0} event(s)`}>
+          <div className="timeline-list">
+            {(events ?? []).map((event) => (
+              <article className="timeline-item" key={event.id}>
+                <div className="timeline-track" />
+                <div className="timeline-content">
+                  <div className="timeline-header">
                     <strong>{eventLabel(event.event_type)}</strong>
                     <span>{formatTime(event.created_at)}</span>
                   </div>
                   {event.payload && Object.keys(event.payload).length > 0 ? (
                     <pre className="payload-block">{JSON.stringify(event.payload, null, 2)}</pre>
                   ) : (
-                    <p className="muted">No extra payload</p>
+                    <p className="subtle-copy">No additional payload</p>
                   )}
                 </div>
-              </div>
+              </article>
             ))}
           </div>
-        </div>
+        </SectionCard>
 
-        <div className="panel">
-          <div className="panel-head">
-            <h2>Shipments</h2>
-            <span>{shipmentsLoading ? "Refreshing" : `${shipments?.length ?? 0} created`}</span>
-          </div>
+        <SectionCard title="Shipments" subtitle={`${shipments?.length ?? 0} record(s)`}>
           {shipments && shipments.length > 0 ? (
-            <div className="shipment-list">
+            <div className="compact-list">
               {shipments.map((shipment) => (
-                <div className="shipment-card" key={shipment.id}>
-                  <strong>{shipment.tracking_id}</strong>
-                  <span>{shipment.warehouse_code}</span>
+                <div className="compact-item static" key={shipment.id}>
+                  <div>
+                    <strong>{shipment.tracking_id}</strong>
+                    <p>{shipment.warehouse_code}</p>
+                  </div>
                   <span className={statusTone(shipment.status)}>{shipment.status}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="muted">No shipment record yet.</p>
+            <p className="subtle-copy">No shipment records yet.</p>
           )}
-        </div>
+        </SectionCard>
+
+        <SectionCard title="Alternative Plans" subtitle={`${candidatePlans.length} candidate option(s)`}>
+          {candidatePlans.length > 0 ? (
+            <div className="compact-list">
+              {candidatePlans.map((plan, index) => (
+                <div className="compact-item static" key={`${plan.total_score}-${index}`}>
+                  <div>
+                    <strong>{plan.warehouses_used.join(", ")}</strong>
+                    <p>{plan.split_count} split(s)</p>
+                  </div>
+                  <strong>{plan.total_score}</strong>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="subtle-copy">No alternative candidate plans stored for this order.</p>
+          )}
+        </SectionCard>
       </section>
     </>
   );
 }
 
+function WarehouseSummary({ warehouses }: { warehouses: Warehouse[] }) {
+  return (
+    <section className="warehouse-grid">
+      {warehouses.map((warehouse) => (
+        <article className="warehouse-card" key={warehouse.id}>
+          <div className="warehouse-head">
+            <strong>{warehouse.code}</strong>
+            <span className={warehouse.active ? "status status-success" : "status status-danger"}>
+              {warehouse.active ? "Active" : "Inactive"}
+            </span>
+          </div>
+          <p>{warehouse.name}</p>
+          <dl>
+            <div>
+              <dt>Zones</dt>
+              <dd>{warehouse.supported_zones.join(", ")}</dd>
+            </div>
+            <div>
+              <dt>Load</dt>
+              <dd>{warehouse.current_load} / {warehouse.daily_capacity}</dd>
+            </div>
+          </dl>
+        </article>
+      ))}
+    </section>
+  );
+}
+
 function InventoryPage() {
   const [warehouseFilter, setWarehouseFilter] = useState("ALL");
-  const { data: warehouses, loading: warehousesLoading } = usePolling(() => fetchWarehouses(), [], 10000);
-  const { data: inventory, loading: inventoryLoading, error } = usePolling(
-    () => fetchInventory(180, warehouseFilter),
-    [warehouseFilter],
-    6000,
-  );
+  const { data: warehouses } = usePolling(() => fetchWarehouses(), [], 10000);
+  const { data: inventory, loading, error } = usePolling(() => fetchInventory(180, warehouseFilter), [warehouseFilter], 6000);
 
   return (
     <>
-      <HeaderBlock
-        title="Inventory"
-        subtitle="Per-warehouse stock levels and reservation pressure across the seeded catalog."
+      <PageIntro
+        title="Inventory Position"
+        subtitle="Current stock, reserved units, and warehouse availability across the fulfillment network."
+        action={
+          <label className="filter-control">
+            <span>Warehouse</span>
+            <select value={warehouseFilter} onChange={(event) => setWarehouseFilter(event.target.value)}>
+              <option value="ALL">All warehouses</option>
+              {(warehouses ?? []).map((warehouse) => (
+                <option key={warehouse.id} value={warehouse.code}>
+                  {warehouse.code} - {warehouse.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        }
       />
-      <section className="toolbar">
-        <label>
-          Warehouse
-          <select value={warehouseFilter} onChange={(event) => setWarehouseFilter(event.target.value)}>
-            <option value="ALL">All warehouses</option>
-            {(warehouses ?? []).map((warehouse) => (
-              <option key={warehouse.id} value={warehouse.code}>
-                {warehouse.code} · {warehouse.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="toolbar-note">
-          {warehousesLoading ? "Loading warehouses..." : `${warehouses?.length ?? 0} warehouse profiles loaded`}
-        </div>
-      </section>
 
-      {inventoryLoading && !inventory ? (
-        <PageState title="Loading inventory" message="Gathering stock positions from the inventory service." />
-      ) : error || !inventory ? (
-        <PageState title="Inventory unavailable" message={error ?? "Inventory data could not be loaded."} />
+      {warehouses && warehouses.length > 0 ? <WarehouseSummary warehouses={warehouses} /> : null}
+
+      {loading && !inventory ? (
+        <EmptyState title="Loading inventory" message="Collecting stock positions from the inventory service." />
+      ) : !inventory || error ? (
+        <EmptyState title="Inventory unavailable" message={error ?? "Inventory data could not be loaded."} />
       ) : (
-        <section className="panel">
-          <div className="panel-head">
-            <h2>Inventory Snapshot</h2>
-            <span>{inventory.length} records</span>
-          </div>
-          <div className="inventory-table">
-            <div className="table-head">
-              <span>Warehouse</span>
-              <span>SKU</span>
-              <span>Available</span>
-              <span>Reserved</span>
-              <span>Updated</span>
-            </div>
-            {inventory.map((record) => (
-              <div className="table-row" key={record.id}>
-                <span>{record.warehouse_code ?? record.warehouse_id.slice(0, 8)}</span>
-                <strong>{record.sku}</strong>
-                <span>{record.available_qty}</span>
-                <span>{record.reserved_qty}</span>
-                <span>{formatTime(record.updated_at)}</span>
+        <SectionCard title="Inventory Snapshot" subtitle={`${inventory.length} record(s) in view`}>
+          <div className="table-shell">
+            <div className="data-table">
+              <div className="data-table-head">
+                <span>Warehouse</span>
+                <span>SKU</span>
+                <span>Available</span>
+                <span>Reserved</span>
+                <span>Updated</span>
               </div>
-            ))}
+              {inventory.map((record) => (
+                <div className="data-table-row" key={record.id}>
+                  <span>{record.warehouse_code ?? compactId(record.warehouse_id)}</span>
+                  <strong>{record.sku}</strong>
+                  <span>{record.available_qty}</span>
+                  <span>{record.reserved_qty}</span>
+                  <span>{formatTime(record.updated_at)}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </section>
+        </SectionCard>
       )}
     </>
+  );
+}
+
+function HealthCard({ title, health, metrics }: { title: string; health: ServiceMetrics | null; metrics: ServiceMetrics | null }) {
+  const rows = Object.entries(metrics ?? {}).slice(0, 8);
+
+  return (
+    <article className="service-card">
+      <div className="service-card-head">
+        <div>
+          <h5>{title}</h5>
+          <p>{health?.service ? String(health.service) : "Operational metrics"}</p>
+        </div>
+        <span className={health?.status === "ok" ? "status status-success" : "status status-danger"}>
+          {String(health?.status ?? "unknown")}
+        </span>
+      </div>
+
+      <div className="metric-stack">
+        {rows.map(([key, value]) => (
+          <div className="metric-row" key={key}>
+            <span>{titleCase(key)}</span>
+            <strong>{String(value)}</strong>
+          </div>
+        ))}
+      </div>
+    </article>
   );
 }
 
@@ -504,121 +701,52 @@ function HealthPage() {
 
   return (
     <>
-      <HeaderBlock
-        title="System Health"
-        subtitle="Service reachability, metrics snapshots, and observability links for the operational story."
+      <PageIntro
+        title="Service Health"
+        subtitle="Endpoint status, operating metrics, and direct links to supporting observability tools."
       />
-      <section className="health-grid">
+
+      <section className="service-grid">
         <HealthCard title="Order API" health={orderHealth} metrics={orderMetrics} />
         <HealthCard title="Inventory Service" health={inventoryHealth} metrics={inventoryMetrics} />
         <HealthCard title="Routing Engine" health={routingHealth} metrics={routingMetrics} />
-        <div className="panel temporal-card">
-          <div className="panel-head">
-            <h2>Temporal</h2>
-            <span className="status status-green">reachable</span>
-          </div>
-          <p className="muted">
-            Use the Temporal UI to inspect durable workflow histories, retries, and task queues.
-          </p>
-          <a className="cta-link" href={temporalUiUrl} target="_blank" rel="noreferrer">
-            Open Temporal UI
-          </a>
-        </div>
-        <div className="panel temporal-card">
-          <div className="panel-head">
-            <h2>Prometheus & Grafana</h2>
-            <span className="status status-green">ready</span>
-          </div>
-          <p className="muted">
-            Prometheus scrapes every service and Grafana ships with a dashboard for order intake, retries, latency, and compensation.
-          </p>
-          {window.location.port === "5173" ? (
-            <>
-              <a className="cta-link" href={prometheusUrl} target="_blank" rel="noreferrer">
-                Open Prometheus
+
+        <SectionCard title="Operational Tools" subtitle="Direct access to workflow and monitoring systems">
+          <div className="tool-links">
+            {temporalUiUrl ? (
+              <a className="tool-link" href={temporalUiUrl} target="_blank" rel="noreferrer">
+                <span>Temporal UI</span>
+                <strong>Workflow histories and retries</strong>
               </a>
-              <a className="cta-link" href={grafanaUrl} target="_blank" rel="noreferrer">
-                Open Grafana
+            ) : null}
+            {grafanaUrl ? (
+              <a className="tool-link" href={grafanaUrl} target="_blank" rel="noreferrer">
+                <span>Grafana</span>
+                <strong>Dashboards and latency trends</strong>
               </a>
-            </>
-          ) : (
-            <p className="muted">Local observability links are available in the Docker development stack.</p>
-          )}
-        </div>
+            ) : null}
+            {prometheusUrl ? (
+              <a className="tool-link" href={prometheusUrl} target="_blank" rel="noreferrer">
+                <span>Prometheus</span>
+                <strong>Metrics and scrape health</strong>
+              </a>
+            ) : null}
+          </div>
+        </SectionCard>
       </section>
     </>
   );
 }
 
-function HealthCard({
-  title,
-  health,
-  metrics,
-}: {
-  title: string;
-  health: ServiceMetrics | null;
-  metrics: ServiceMetrics | null;
-}) {
-  const rows = Object.entries(metrics ?? {});
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h2>{title}</h2>
-        <span className={health?.status === "ok" ? "status status-green" : "status status-red"}>
-          {String(health?.status ?? "unknown")}
-        </span>
-      </div>
-      <div className="metric-list">
-        {rows.map(([key, value]) => (
-          <div className="metric-line" key={key}>
-            <span>{key.replaceAll("_", " ")}</span>
-            <strong>{String(value)}</strong>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function HeaderBlock({
-  title,
-  subtitle,
-  action,
-}: {
-  title: string;
-  subtitle: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <section className="header-block">
-      <div>
-        <p className="eyebrow">Live Platform View</p>
-        <h2>{title}</h2>
-        <p className="muted">{subtitle}</p>
-      </div>
-      {action}
-    </section>
-  );
-}
-
-function PageState({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="page-state">
-      <h2>{title}</h2>
-      <p>{message}</p>
-    </div>
-  );
-}
-
 export function App() {
   return (
-    <AppShell>
+    <Shell>
       <Routes>
         <Route path="/" element={<OrdersPage />} />
         <Route path="/orders/:orderId" element={<OrderDetailPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/health" element={<HealthPage />} />
       </Routes>
-    </AppShell>
+    </Shell>
   );
 }

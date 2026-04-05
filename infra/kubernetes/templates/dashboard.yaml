@@ -21,6 +21,13 @@ spec:
       containers:
         - name: dashboard
           image: __DASHBOARD_IMAGE__
+          env:
+            - name: TEMPORAL_UI_PUBLIC_URL
+              value: "__TEMPORAL_UI_PUBLIC_URL__"
+            - name: GRAFANA_PUBLIC_URL
+              value: "__GRAFANA_PUBLIC_URL__"
+            - name: PROMETHEUS_PUBLIC_URL
+              value: "__PROMETHEUS_PUBLIC_URL__"
           ports:
             - containerPort: 80
           readinessProbe:

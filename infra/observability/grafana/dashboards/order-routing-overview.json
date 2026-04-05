@@ -151,7 +151,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(order_api_orders_by_status{status=\"failed\"})",
+          "expr": "max(order_api_orders_by_status{status=\"failed\"})",
           "legendFormat": "",
           "range": true,
           "refId": "A"
