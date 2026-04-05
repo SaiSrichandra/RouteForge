@@ -1,8 +1,12 @@
 param(
     [string]$AwsRegion = "us-east-1",
-    [string]$AwsAccountId = "565582985513",
+    [string]$AwsAccountId = $env:AWS_ACCOUNT_ID,
     [string]$Tag = "latest"
 )
+
+if (-not $AwsAccountId) {
+    throw "AwsAccountId is required. Pass -AwsAccountId or set AWS_ACCOUNT_ID."
+}
 
 $registry = "$AwsAccountId.dkr.ecr.$AwsRegion.amazonaws.com"
 $images = @(

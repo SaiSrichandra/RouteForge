@@ -1,6 +1,10 @@
 param(
-    [string]$DashboardBaseUrl = "http://a9e83f51b01c94702826fd8e8bb7e5cb-660024319.us-east-1.elb.amazonaws.com"
+    [string]$DashboardBaseUrl = $env:DASHBOARD_BASE_URL
 )
+
+if (-not $DashboardBaseUrl) {
+    throw "DashboardBaseUrl is required. Pass -DashboardBaseUrl or set DASHBOARD_BASE_URL."
+}
 
 $env:BASE_URL = "$DashboardBaseUrl/api/order"
 Write-Host "Running k6 against $env:BASE_URL"

@@ -2,15 +2,23 @@ param(
     [string]$AwsRegion = "us-east-1",
     [string]$ClusterName = "dor-dev",
     [string]$Namespace = "dor",
-    [string]$AwsAccountId = "565582985513",
+    [string]$AwsAccountId = $env:AWS_ACCOUNT_ID,
     [Parameter(Mandatory = $true)]
     [string]$DbPassword,
-    [string]$RdsEndpoint = "dor-dev-postgres.c29icc2s04nd.us-east-1.rds.amazonaws.com",
+    [string]$RdsEndpoint = $env:RDS_ENDPOINT,
     [string]$DbName = "order_routing",
     [string]$DbUser = "dor_admin",
     [string]$ImageTag = "latest",
     [switch]$ApplySeedJob
 )
+
+if (-not $AwsAccountId) {
+    throw "AwsAccountId is required. Pass -AwsAccountId or set AWS_ACCOUNT_ID."
+}
+
+if (-not $RdsEndpoint) {
+    throw "RdsEndpoint is required. Pass -RdsEndpoint or set RDS_ENDPOINT."
+}
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $templatesDir = Join-Path $repoRoot "infra\kubernetes\templates"
