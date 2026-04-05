@@ -127,7 +127,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <p className="eyebrow">Distributed Fulfillment</p>
           <h1>Order Routing Console</h1>
           <p className="muted">
-            Watch routing choices, workflow retries, and inventory changes in one place.
+            Watch Routing Choices, Workflow Retries, and inventory changes in one place.
           </p>
         </div>
 
