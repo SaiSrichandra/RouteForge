@@ -2,13 +2,12 @@ import uuid
 from collections.abc import Generator
 from decimal import Decimal
 
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-
 from app import main
 from app.cache import inventory_read_cache
 from app.models import Inventory, Reservation, ReservationStatus, Warehouse
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 
 def create_client(tmp_path, monkeypatch) -> tuple[TestClient, sessionmaker[Session]]:

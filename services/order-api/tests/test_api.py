@@ -2,12 +2,11 @@ import uuid
 from collections.abc import Generator
 from decimal import Decimal
 
+from app import main
+from app.models import Order, OrderStatus, WorkflowEvent
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-
-from app import main
-from app.models import Order, OrderStatus, WorkflowEvent
 
 
 class FakeTemporalClient:

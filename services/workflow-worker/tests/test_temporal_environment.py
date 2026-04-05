@@ -1,12 +1,11 @@
 import asyncio
 
+from app import workflows
 from temporalio import activity
 from temporalio.client import WorkflowFailureError
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
-
-from app import workflows
 
 
 def run_async(coro):
