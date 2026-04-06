@@ -120,7 +120,8 @@ $orderedTemplates = @(
     "app-configmap.yaml",
     "app-secret.yaml",
     "temporal-dynamic-config.yaml",
-    "temporal-postgresql.yaml"
+    "temporal-postgresql.yaml",
+    "restock-cronjob.yaml"
 )
 
 foreach ($template in $orderedTemplates) {

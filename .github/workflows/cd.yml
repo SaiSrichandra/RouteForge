@@ -46,6 +46,8 @@ jobs:
       EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
       EKS_NAMESPACE: ${{ vars.EKS_NAMESPACE }}
       RDS_ENDPOINT: ${{ vars.RDS_ENDPOINT }}
+      ORDER_CONSOLE_BUCKET: ${{ vars.ORDER_CONSOLE_BUCKET }}
+      ORDER_CONSOLE_BUCKET_REGION: ${{ vars.ORDER_CONSOLE_BUCKET_REGION }}
       WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
       CURRENT_SHA: ${{ github.sha }}
       INPUT_TAG: ${{ inputs.image_tag }}
@@ -78,7 +80,9 @@ jobs:
             "AWS_ACCOUNT_ID",
             "EKS_CLUSTER_NAME",
             "EKS_NAMESPACE",
-            "RDS_ENDPOINT"
+            "RDS_ENDPOINT",
+            "ORDER_CONSOLE_BUCKET",
+            "ORDER_CONSOLE_BUCKET_REGION"
           )
 
           foreach ($name in $requiredVariables) {
@@ -160,3 +164,27 @@ jobs:
         shell: pwsh
         run: |
           kubectl get svc -n $env:EKS_NAMESPACE
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/order-request-console/package-lock.json
+
+      - name: Build order request console
+        shell: pwsh
+        run: |
+          Push-Location frontend/order-request-console
+          npm ci
+          npm run build
+          Pop-Location
+
+      - name: Publish order request console to S3
+        shell: pwsh
+        run: |
+          aws s3 sync `
+            frontend/order-request-console/dist `
+            s3://$env:ORDER_CONSOLE_BUCKET `
+            --delete `
+            --region $env:ORDER_CONSOLE_BUCKET_REGION

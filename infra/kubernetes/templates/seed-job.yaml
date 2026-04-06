@@ -33,6 +33,16 @@ spec:
 
               database_url = os.environ["DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://", 1)
               products = [f"SKU-{index:03d}" for index in range(1, 101)]
+              featured_inventory = {
+                  "SKU-001": (25, 40),
+                  "SKU-002": (18, 30),
+                  "SKU-003": (12, 20),
+                  "SKU-004": (12, 20),
+                  "SKU-005": (12, 20),
+                  "SKU-006": (12, 20),
+                  "SKU-010": (60, 90),
+                  "SKU-011": (45, 70),
+              }
               warehouses = [
                   {
                       "code": "NJ",
@@ -92,7 +102,13 @@ spec:
                           )
                           warehouse_id = cur.fetchone()[0]
                           for sku in products:
-                              available_qty = random.randint(20, 180)
+                              if sku in featured_inventory:
+                                  low, high = featured_inventory[sku]
+                                  available_qty = random.randint(low, high)
+                              elif random.random() < 0.85:
+                                  available_qty = random.randint(5, 10)
+                              else:
+                                  available_qty = random.randint(11, 16)
                               cur.execute(
                                   """
                                   INSERT INTO inventory (id, warehouse_id, sku, available_qty, reserved_qty)

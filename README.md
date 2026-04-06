@@ -77,6 +77,11 @@ Current project capabilities include:
 - workflow tests, including Temporal time-skipping tests
 - k6 load testing and benchmark-backed optimization
 
+## Live Links
+
+- Dashboard: `http://a9e83f51b01c94702826fd8e8bb7e5cb-660024319.us-east-1.elb.amazonaws.com`
+- Order Console: `http://routeforge-order-console-565582985513.s3-website.us-east-2.amazonaws.com`
+
 ## Performance Story
 
 Two measurable improvements were built into the project:

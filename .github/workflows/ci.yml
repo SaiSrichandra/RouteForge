@@ -76,8 +76,18 @@ jobs:
           path: benchmark_inventory_cache.txt
 
   frontend-build:
-    name: Frontend Build
+    name: Frontend Build (${{ matrix.frontend.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        frontend:
+          - name: dashboard
+            path: frontend/dashboard
+            lockfile: frontend/dashboard/package-lock.json
+          - name: order-request-console
+            path: frontend/order-request-console
+            lockfile: frontend/order-request-console/package-lock.json
 
     steps:
       - name: Checkout
@@ -88,15 +98,15 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: frontend/dashboard/package-lock.json
+          cache-dependency-path: ${{ matrix.frontend.lockfile }}
 
-      - name: Install dashboard dependencies
+      - name: Install frontend dependencies
         run: npm ci
-        working-directory: frontend/dashboard
+        working-directory: ${{ matrix.frontend.path }}
 
-      - name: Build dashboard
+      - name: Build frontend
         run: npm run build
-        working-directory: frontend/dashboard
+        working-directory: ${{ matrix.frontend.path }}
 
   docker-builds:
     name: Docker Build (${{ matrix.service.name }})
