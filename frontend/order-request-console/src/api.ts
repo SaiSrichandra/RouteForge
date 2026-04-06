@@ -2,13 +2,28 @@ import type { OrderInput, OrderRecord, Shipment, WorkflowEvent } from "./types";
 
 const apiBaseUrl = "http://a9e83f51b01c94702826fd8e8bb7e5cb-660024319.us-east-1.elb.amazonaws.com/api/order";
 
-async function request<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `Request failed with ${response.status}`);
+function normalizeRequestError(error: unknown): Error {
+  if (error instanceof Error) {
+    if (error.message.includes("Failed to fetch")) {
+      return new Error("Request was sent, but the browser could not read the response.");
+    }
+    return error;
   }
-  return (await response.json()) as T;
+
+  return new Error("Request could not be completed.");
+}
+
+async function request<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  try {
+    const response = await fetch(input, init);
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(body || `Request failed with ${response.status}`);
+    }
+    return (await response.json()) as T;
+  } catch (error) {
+    throw normalizeRequestError(error);
+  }
 }
 
 export function createOrder(payload: OrderInput) {

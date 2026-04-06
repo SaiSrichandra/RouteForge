@@ -19,6 +19,34 @@ function withRunSpecificCustomer(payload: OrderInput, runLabel: string): OrderIn
   };
 }
 
+function normalizePayload(payload: OrderInput): OrderInput {
+  const normalizedItems = payload.line_items.flatMap((item) => {
+    if (item.quantity <= 100) {
+      return [item];
+    }
+
+    const chunks: OrderInput["line_items"] = [];
+    let remaining = item.quantity;
+
+    while (remaining > 0) {
+      const chunkQuantity = Math.min(remaining, 100);
+      chunks.push({
+        sku: item.sku,
+        quantity: chunkQuantity,
+        unit_price: item.unit_price,
+      });
+      remaining -= chunkQuantity;
+    }
+
+    return chunks;
+  });
+
+  return {
+    ...clonePayload(payload),
+    line_items: normalizedItems,
+  };
+}
+
 function formatTime(value: string | null) {
   if (!value) {
     return "N/A";
@@ -83,8 +111,6 @@ export function App() {
   const [selectedShipments, setSelectedShipments] = useState<Shipment[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [loadingOrder, setLoadingOrder] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [inspectorError, setInspectorError] = useState<string | null>(null);
 
   const selectedScenario = useMemo(
     () => scenarios.find((scenario) => scenario.id === selectedScenarioId) ?? scenarios[0],
@@ -114,12 +140,11 @@ export function App() {
         setSelectedOrder(order);
         setSelectedEvents(events);
         setSelectedShipments(shipments);
-        setInspectorError(null);
       } catch (nextError) {
         if (!active) {
           return;
         }
-        setInspectorError(nextError instanceof Error ? nextError.message : "Unable to load order detail.");
+        console.error(nextError);
       } finally {
         if (active) {
           setLoadingOrder(false);
@@ -172,7 +197,7 @@ export function App() {
   }
 
   async function submitPayload(payload: OrderInput, requestName: string) {
-    const order = await createOrder(payload);
+    const order = await createOrder(normalizePayload(payload));
     setSubmissions((current) => [{ requestName, submittedAt: new Date().toISOString(), order }, ...current].slice(0, 18));
     setSelectedOrderId(order.id);
     return order;
@@ -181,11 +206,10 @@ export function App() {
   async function handleSingleSubmit() {
     try {
       setSubmitting(true);
-      setError(null);
       const runLabel = Date.now().toString().slice(-6);
       await submitPayload(withRunSpecificCustomer(form, runLabel), selectedScenario.name);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Order submission failed.");
+      console.error(nextError);
     } finally {
       setSubmitting(false);
     }
@@ -194,14 +218,17 @@ export function App() {
   async function handleBurstSubmit() {
     try {
       setSubmitting(true);
-      setError(null);
 
       for (let index = 0; index < burstCount; index += 1) {
         const runLabel = `${Date.now().toString().slice(-5)}-${index + 1}`;
-        await submitPayload(withRunSpecificCustomer(form, runLabel), `${selectedScenario.name} Burst`);
+        try {
+          await submitPayload(withRunSpecificCustomer(form, runLabel), `${selectedScenario.name} Burst`);
+        } catch (nextError) {
+          console.error(nextError);
+        }
       }
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Burst submission failed.");
+      console.error(nextError);
     } finally {
       setSubmitting(false);
     }
@@ -289,6 +316,7 @@ export function App() {
                     <input
                       type="number"
                       min={1}
+                      max={500}
                       value={item.quantity}
                       onChange={(event) => updateItem(index, "quantity", event.target.value)}
                     />
@@ -317,8 +345,6 @@ export function App() {
                   {submitting ? "Submitting..." : `Submit burst x${burstCount}`}
                 </button>
               </div>
-
-              {error ? <p className="error-banner">{error}</p> : null}
             </section>
           </div>
 
@@ -363,8 +389,6 @@ export function App() {
                 <p className="empty-copy">Submit or pick an order to inspect it.</p>
               ) : loadingOrder && !selectedOrder ? (
                 <p className="empty-copy">Loading order detail...</p>
-              ) : inspectorError ? (
-                <p className="error-banner">{inspectorError}</p>
               ) : selectedOrder ? (
                 <>
                   <div className="stats">
