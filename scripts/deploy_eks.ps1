@@ -9,6 +9,7 @@ param(
     [string]$DbName = "order_routing",
     [string]$DbUser = "dor_admin",
     [string]$ImageTag = "latest",
+    [string]$OrderApiCorsOrigins = $(if ($env:ORDER_API_CORS_ORIGINS) { $env:ORDER_API_CORS_ORIGINS } else { "*" }),
     [string]$TemporalUiPublicUrl = $env:TEMPORAL_UI_PUBLIC_URL,
     [string]$GrafanaPublicUrl = $env:GRAFANA_PUBLIC_URL,
     [string]$PrometheusPublicUrl = $env:PROMETHEUS_PUBLIC_URL,
@@ -64,6 +65,7 @@ $replacements = @{
     "__DATABASE_URL__" = $databaseUrl
     "__DB_PASSWORD__" = $DbPassword
     "__RDS_ENDPOINT__" = $RdsEndpoint
+    "__ORDER_API_CORS_ORIGINS__" = $OrderApiCorsOrigins
     "__ORDER_API_IMAGE__" = "$registry/dor-dev/order-api:$ImageTag"
     "__INVENTORY_SERVICE_IMAGE__" = "$registry/dor-dev/inventory-service:$ImageTag"
     "__ROUTING_ENGINE_IMAGE__" = "$registry/dor-dev/routing-engine:$ImageTag"

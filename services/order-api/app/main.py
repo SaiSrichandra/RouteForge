@@ -2,6 +2,7 @@ import uuid
 from uuid import UUID
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 from temporalio.client import Client
@@ -23,6 +24,17 @@ app = FastAPI(
     version="0.1.0",
     description="Entry-point service for order intake and lifecycle lookup.",
 )
+
+cors_origins = settings.parsed_cors_allowed_origins
+if cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
 app.middleware("http")(instrument_http)
 
 

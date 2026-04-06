@@ -6,6 +6,7 @@ metadata:
 data:
   TEMPORAL_ADDRESS: temporal:7233
   TEMPORAL_TASK_QUEUE: order-routing-task-queue
+  ORDER_API_CORS_ORIGINS: "__ORDER_API_CORS_ORIGINS__"
   INVENTORY_SERVICE_URL: http://inventory-service:8001
   ROUTING_SERVICE_URL: http://routing-engine:8002
   DEFAULT_SLA_DAYS: "3"

@@ -39,6 +39,11 @@ spec:
                 configMapKeyRef:
                   name: dor-app-config
                   key: TEMPORAL_TASK_QUEUE
+            - name: CORS_ALLOWED_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: dor-app-config
+                  key: ORDER_API_CORS_ORIGINS
           readinessProbe:
             httpGet:
               path: /health
