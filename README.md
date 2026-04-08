@@ -2,6 +2,11 @@
 
 Cloud-native fulfillment platform that accepts customer orders, chooses the best warehouse fulfillment strategy, orchestrates downstream steps with Temporal, exposes a React dashboard, and runs on AWS EKS with observability, CI/CD, and performance testing.
 
+## Live Links
+
+- Dashboard: `http://a9e83f51b01c94702826fd8e8bb7e5cb-660024319.us-east-1.elb.amazonaws.com`
+- Order Console: `http://routeforge-order-console-565582985513.s3-website.us-east-2.amazonaws.com`
+
 ## What this project does
 
 Given an order with multiple SKUs and a destination zone, the system:
@@ -76,11 +81,6 @@ Current project capabilities include:
 - API and database integration tests
 - workflow tests, including Temporal time-skipping tests
 - k6 load testing and benchmark-backed optimization
-
-## Live Links
-
-- Dashboard: `http://a9e83f51b01c94702826fd8e8bb7e5cb-660024319.us-east-1.elb.amazonaws.com`
-- Order Console: `http://routeforge-order-console-565582985513.s3-website.us-east-2.amazonaws.com`
 
 ## Performance Story
 
