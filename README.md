@@ -1,6 +1,6 @@
 # Distributed Order Routing Platform
 
-Cloud-native fulfillment platform that accepts customer orders, chooses the best warehouse fulfillment strategy, orchestrates downstream steps with Temporal, exposes a React dashboard, and runs on AWS EKS with observability, CI/CD, and performance testing.
+Cloud-native fulfillment platform that accepts customer orders, chooses the best warehouse fulfillment strategy, orchestrates downstream steps with Temporal, and exposes a lightweight AWS-hosted dashboard plus a public order console.
 
 ## Live Links
 
@@ -45,15 +45,13 @@ flowchart LR
 - `inventory-service`: serves warehouse inventory and manages reservations/releases
 - `routing-engine`: computes and scores fulfillment plans
 - `workflow-worker`: runs Temporal workflows, retries, and compensation logic
-- `dashboard`: web UI for orders, events, shipments, and system links
-- `prometheus` / `grafana`: metrics collection and visualization
+- `dashboard`: web UI for orders, events, shipments, and inventory visibility
 
 ## Tech Stack
 
 - Backend: FastAPI, SQLAlchemy, PostgreSQL, Temporal Python SDK
 - Frontend: React, TypeScript, Vite
 - Infra: Docker Compose, Kubernetes, Terraform, AWS EKS, RDS, ECR
-- Observability: Prometheus, Grafana
 - Delivery: GitHub Actions CI/CD
 - Testing: pytest, Temporal test environment, k6
 
@@ -64,19 +62,18 @@ flowchart LR
 - Temporal-based fulfillment orchestration with retries
 - Workflow event history for debugging and UI visibility
 - Live cloud deployment on AWS EKS
-- Prometheus/Grafana observability
 - CI/CD with GitHub Actions, ECR, and EKS deployment
 
 ## Current Status
 
-The platform is fully deployed on AWS and also runnable locally.
+The platform is fully deployed on AWS in a slimmed demo footprint and is also runnable locally.
 
 Current project capabilities include:
 
 - multi-service order routing and orchestration
 - Terraform-provisioned AWS infrastructure
-- EKS deployment with public dashboard and tooling endpoints
-- Prometheus and Grafana in-cluster monitoring
+- EKS deployment with a single public dashboard endpoint
+- public order console hosted separately on S3
 - routing unit tests
 - API and database integration tests
 - workflow tests, including Temporal time-skipping tests
@@ -198,8 +195,6 @@ The Kubernetes deployment layer includes:
 - app services
 - Temporal
 - dashboard
-- Prometheus
-- Grafana
 
 Deployment helpers:
 
@@ -226,7 +221,6 @@ This project demonstrates:
 
 - service decomposition and distributed systems design
 - workflow durability, retries, and compensation
-- observability with real metrics and dashboards
 - cloud deployment on AWS EKS with Terraform
 - CI/CD and release automation
 - testing across unit, integration, workflow, and load levels

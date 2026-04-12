@@ -17,18 +17,6 @@ import {
 } from "./api";
 import type { CandidatePlan, Order, ServiceMetrics, Warehouse } from "./types";
 
-const runtimeConfig = window.__ROUTEFORGE_CONFIG__;
-const isLocalDev = window.location.hostname === "localhost" && window.location.port === "5173";
-
-const temporalUiUrl =
-  runtimeConfig?.temporalUiUrl || import.meta.env.VITE_TEMPORAL_UI_URL || (isLocalDev ? "http://localhost:8088" : null);
-
-const grafanaUrl =
-  runtimeConfig?.grafanaUrl || import.meta.env.VITE_GRAFANA_URL || (isLocalDev ? "http://localhost:3001" : null);
-
-const prometheusUrl =
-  runtimeConfig?.prometheusUrl || import.meta.env.VITE_PROMETHEUS_URL || (isLocalDev ? "http://localhost:9090" : null);
-
 function usePolling<T>(loader: () => Promise<T>, deps: readonly unknown[] = [], intervalMs = 5000) {
   const loaderRef = useRef(loader);
   const [data, setData] = useState<T | null>(null);
@@ -168,24 +156,6 @@ function Shell({ children }: { children: React.ReactNode }) {
             Services
           </NavLink>
         </nav>
-
-        <div className="utility-actions">
-          {temporalUiUrl ? (
-            <a className="utility-link" href={temporalUiUrl} target="_blank" rel="noreferrer">
-              Temporal
-            </a>
-          ) : null}
-          {grafanaUrl ? (
-            <a className="utility-link" href={grafanaUrl} target="_blank" rel="noreferrer">
-              Grafana
-            </a>
-          ) : null}
-          {prometheusUrl ? (
-            <a className="utility-link" href={prometheusUrl} target="_blank" rel="noreferrer">
-              Prometheus
-            </a>
-          ) : null}
-        </div>
       </header>
 
       <main className="workspace">
@@ -193,13 +163,11 @@ function Shell({ children }: { children: React.ReactNode }) {
           <div>
             <p className="hero-label">Live View</p>
             <h2>{currentView}</h2>
-            <p className="hero-copy">
-              Real-time visibility into routing decisions, workflow progression, inventory posture, and service health.
-            </p>
+            <p className="hero-copy">Live visibility into submitted orders, inventory position, and core service health.</p>
           </div>
           <div className="hero-pill">
             <span className="hero-pill-dot" />
-            Auto-refreshing operational data
+            Auto-refreshing order operations
           </div>
         </section>
 
@@ -703,36 +671,13 @@ function HealthPage() {
     <>
       <PageIntro
         title="Service Health"
-        subtitle="Endpoint status, operating metrics, and direct links to supporting observability tools."
+        subtitle="Endpoint status and operating metrics for the services that power order processing."
       />
 
       <section className="service-grid">
         <HealthCard title="Order API" health={orderHealth} metrics={orderMetrics} />
         <HealthCard title="Inventory Service" health={inventoryHealth} metrics={inventoryMetrics} />
         <HealthCard title="Routing Engine" health={routingHealth} metrics={routingMetrics} />
-
-        <SectionCard title="Operational Tools" subtitle="Direct access to workflow and monitoring systems">
-          <div className="tool-links">
-            {temporalUiUrl ? (
-              <a className="tool-link" href={temporalUiUrl} target="_blank" rel="noreferrer">
-                <span>Temporal UI</span>
-                <strong>Workflow histories and retries</strong>
-              </a>
-            ) : null}
-            {grafanaUrl ? (
-              <a className="tool-link" href={grafanaUrl} target="_blank" rel="noreferrer">
-                <span>Grafana</span>
-                <strong>Dashboards and latency trends</strong>
-              </a>
-            ) : null}
-            {prometheusUrl ? (
-              <a className="tool-link" href={prometheusUrl} target="_blank" rel="noreferrer">
-                <span>Prometheus</span>
-                <strong>Metrics and scrape health</strong>
-              </a>
-            ) : null}
-          </div>
-        </SectionCard>
       </section>
     </>
   );
