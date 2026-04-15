@@ -95,14 +95,10 @@ if ($ApplySeedJob) {
     Apply-Template -FileName "seed-job.yaml"
 }
 
-kubectl rollout restart deployment temporal -n $Namespace
-kubectl rollout restart deployment inventory-service -n $Namespace
-kubectl rollout restart deployment routing-engine -n $Namespace
-kubectl rollout restart deployment order-api -n $Namespace
-kubectl rollout restart deployment workflow-worker -n $Namespace
-kubectl rollout restart deployment dashboard -n $Namespace
 
 Write-Host "Deployment submitted to namespace '$Namespace'."
 Write-Host "Check rollout progress with:"
 Write-Host "kubectl get pods -n $Namespace"
 Write-Host "kubectl get svc -n $Namespace"
+
+

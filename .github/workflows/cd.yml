@@ -143,9 +143,6 @@ jobs:
           $deployments = @(
             "temporal-postgresql",
             "temporal",
-            "temporal-ui",
-            "prometheus",
-            "grafana",
             "inventory-service",
             "routing-engine",
             "order-api",
@@ -188,3 +185,4 @@ jobs:
             s3://$env:ORDER_CONSOLE_BUCKET `
             --delete `
             --region $env:ORDER_CONSOLE_BUCKET_REGION
+
