@@ -4,7 +4,7 @@ metadata:
   name: inventory-service
   namespace: __NAMESPACE__
 spec:
-  replicas: 1
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate:

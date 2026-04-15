@@ -10,8 +10,10 @@ param(
     [string]$DbUser = "dor_admin",
     [string]$ImageTag = "latest",
     [string]$OrderApiCorsOrigins = $(if ($env:ORDER_API_CORS_ORIGINS) { $env:ORDER_API_CORS_ORIGINS } else { "*" }),
-    [switch]$ApplySeedJob,
-    [switch]$DeployWorkflowInfra
+    [string]$TemporalUiPublicUrl = $env:TEMPORAL_UI_PUBLIC_URL,
+    [string]$GrafanaPublicUrl = $env:GRAFANA_PUBLIC_URL,
+    [string]$PrometheusPublicUrl = $env:PROMETHEUS_PUBLIC_URL,
+    [switch]$ApplySeedJob
 )
 
 if (-not $AwsAccountId) {
@@ -24,10 +26,39 @@ if (-not $RdsEndpoint) {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $templatesDir = Join-Path $repoRoot "infra\kubernetes\templates"
+$prometheusConfigPath = Join-Path $repoRoot "infra\observability\prometheus\prometheus.yml"
+$grafanaDatasourcePath = Join-Path $repoRoot "infra\observability\grafana\provisioning\datasources\prometheus.yml"
+$grafanaDashboardProviderPath = Join-Path $repoRoot "infra\observability\grafana\provisioning\dashboards\dashboard.yml"
+$grafanaDashboardJsonPath = Join-Path $repoRoot "infra\observability\grafana\dashboards\order-routing-overview.json"
 $registry = "$AwsAccountId.dkr.ecr.$AwsRegion.amazonaws.com"
 $encodedDbUser = [System.Uri]::EscapeDataString($DbUser)
 $encodedDbPassword = [System.Uri]::EscapeDataString($DbPassword)
 $databaseUrl = "postgresql+psycopg://${encodedDbUser}:${encodedDbPassword}@${RdsEndpoint}:5432/${DbName}?sslmode=require"
+
+function Get-ServicePublicUrl {
+    param(
+        [string]$ServiceName,
+        [int]$Port,
+        [int]$TimeoutSeconds = 180
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
+    while ((Get-Date) -lt $deadline) {
+        $hostName = kubectl get svc $ServiceName -n $Namespace -o jsonpath="{.status.loadBalancer.ingress[0].hostname}" 2>$null
+        if (-not $hostName) {
+            $hostName = kubectl get svc $ServiceName -n $Namespace -o jsonpath="{.status.loadBalancer.ingress[0].ip}" 2>$null
+        }
+
+        if ($hostName) {
+            return "http://${hostName}:${Port}"
+        }
+
+        Start-Sleep -Seconds 5
+    }
+
+    return ""
+}
 
 $replacements = @{
     "__NAMESPACE__" = $Namespace
@@ -40,6 +71,9 @@ $replacements = @{
     "__ROUTING_ENGINE_IMAGE__" = "$registry/dor-dev/routing-engine:$ImageTag"
     "__WORKFLOW_WORKER_IMAGE__" = "$registry/dor-dev/workflow-worker:$ImageTag"
     "__DASHBOARD_IMAGE__" = "$registry/dor-dev/dashboard:$ImageTag"
+    "__TEMPORAL_UI_PUBLIC_URL__" = ""
+    "__GRAFANA_PUBLIC_URL__" = ""
+    "__PROMETHEUS_PUBLIC_URL__" = ""
 }
 
 function Apply-Template {
@@ -56,6 +90,26 @@ function Apply-Template {
     }
 }
 
+function Apply-ConfigMapFromFile {
+    param(
+        [string]$Name,
+        [string]$FilePath
+    )
+
+    $fileName = Split-Path -Leaf $FilePath
+    $fromFileArg = "--from-file=$fileName=$FilePath"
+
+    kubectl create configmap $Name `
+        --namespace $Namespace `
+        $fromFileArg `
+        --dry-run=client `
+        -o yaml | kubectl apply -f -
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "kubectl create/apply configmap failed for $Name"
+    }
+}
+
 aws eks update-kubeconfig --region $AwsRegion --name $ClusterName
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to update kubeconfig for $ClusterName"
@@ -65,46 +119,78 @@ $orderedTemplates = @(
     "namespace.yaml",
     "app-configmap.yaml",
     "app-secret.yaml",
+    "temporal-dynamic-config.yaml",
+    "temporal-postgresql.yaml",
     "restock-cronjob.yaml"
 )
-
-if ($DeployWorkflowInfra) {
-    $orderedTemplates += @(
-        "temporal-dynamic-config.yaml",
-        "temporal-postgresql.yaml"
-    )
-}
 
 foreach ($template in $orderedTemplates) {
     Apply-Template -FileName $template
 }
 
-kubectl delete svc grafana prometheus temporal-ui order-api-public -n $Namespace --ignore-not-found
-kubectl delete deployment grafana prometheus temporal-ui -n $Namespace --ignore-not-found
-kubectl delete configmap prometheus-config grafana-datasources grafana-dashboard-provider grafana-dashboards -n $Namespace --ignore-not-found
+Apply-ConfigMapFromFile -Name "prometheus-config" -FilePath $prometheusConfigPath
+Apply-ConfigMapFromFile -Name "grafana-datasources" -FilePath $grafanaDatasourcePath
+Apply-ConfigMapFromFile -Name "grafana-dashboard-provider" -FilePath $grafanaDashboardProviderPath
+Apply-ConfigMapFromFile -Name "grafana-dashboards" -FilePath $grafanaDashboardJsonPath
 
 $deploymentTemplates = @(
+    "temporal.yaml",
+    "temporal-ui.yaml",
+    "prometheus.yaml",
+    "grafana.yaml",
     "inventory-service.yaml",
     "routing-engine.yaml",
     "order-api.yaml",
-    "workflow-worker.yaml",
-    "dashboard.yaml"
+    "workflow-worker.yaml"
 )
-
-if ($DeployWorkflowInfra) {
-    $deploymentTemplates = @("temporal.yaml") + $deploymentTemplates
-}
 
 foreach ($template in $deploymentTemplates) {
     Apply-Template -FileName $template
 }
+
+if (-not $TemporalUiPublicUrl) {
+    $TemporalUiPublicUrl = Get-ServicePublicUrl -ServiceName "temporal-ui" -Port 8080
+}
+
+if (-not $GrafanaPublicUrl) {
+    $GrafanaPublicUrl = Get-ServicePublicUrl -ServiceName "grafana" -Port 3000
+}
+
+if (-not $PrometheusPublicUrl) {
+    $PrometheusPublicUrl = Get-ServicePublicUrl -ServiceName "prometheus" -Port 9090
+}
+
+$replacements["__TEMPORAL_UI_PUBLIC_URL__"] = $TemporalUiPublicUrl
+$replacements["__GRAFANA_PUBLIC_URL__"] = $GrafanaPublicUrl
+$replacements["__PROMETHEUS_PUBLIC_URL__"] = $PrometheusPublicUrl
+
+Apply-Template -FileName "dashboard.yaml"
 
 if ($ApplySeedJob) {
     kubectl delete job dor-seed-data -n $Namespace --ignore-not-found
     Apply-Template -FileName "seed-job.yaml"
 }
 
+kubectl rollout restart deployment temporal -n $Namespace
+kubectl rollout restart deployment temporal-ui -n $Namespace
+kubectl rollout restart deployment prometheus -n $Namespace
+kubectl rollout restart deployment grafana -n $Namespace
+kubectl rollout restart deployment inventory-service -n $Namespace
+kubectl rollout restart deployment routing-engine -n $Namespace
+kubectl rollout restart deployment order-api -n $Namespace
+kubectl rollout restart deployment workflow-worker -n $Namespace
+kubectl rollout restart deployment dashboard -n $Namespace
+
 Write-Host "Deployment submitted to namespace '$Namespace'."
+if ($TemporalUiPublicUrl) {
+    Write-Host "Temporal UI: $TemporalUiPublicUrl"
+}
+if ($GrafanaPublicUrl) {
+    Write-Host "Grafana: $GrafanaPublicUrl"
+}
+if ($PrometheusPublicUrl) {
+    Write-Host "Prometheus: $PrometheusPublicUrl"
+}
 Write-Host "Check rollout progress with:"
 Write-Host "kubectl get pods -n $Namespace"
 Write-Host "kubectl get svc -n $Namespace"
