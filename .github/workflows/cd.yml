@@ -141,8 +141,6 @@ jobs:
         shell: pwsh
         run: |
           $deployments = @(
-            "temporal-postgresql",
-            "temporal",
             "inventory-service",
             "routing-engine",
             "order-api",
@@ -185,4 +183,6 @@ jobs:
             s3://$env:ORDER_CONSOLE_BUCKET `
             --delete `
             --region $env:ORDER_CONSOLE_BUCKET_REGION
+
+
 

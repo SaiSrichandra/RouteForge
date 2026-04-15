@@ -10,7 +10,8 @@ param(
     [string]$DbUser = "dor_admin",
     [string]$ImageTag = "latest",
     [string]$OrderApiCorsOrigins = $(if ($env:ORDER_API_CORS_ORIGINS) { $env:ORDER_API_CORS_ORIGINS } else { "*" }),
-    [switch]$ApplySeedJob
+    [switch]$ApplySeedJob,
+    [switch]$DeployWorkflowInfra
 )
 
 if (-not $AwsAccountId) {
@@ -64,10 +65,15 @@ $orderedTemplates = @(
     "namespace.yaml",
     "app-configmap.yaml",
     "app-secret.yaml",
-    "temporal-dynamic-config.yaml",
-    "temporal-postgresql.yaml",
     "restock-cronjob.yaml"
 )
+
+if ($DeployWorkflowInfra) {
+    $orderedTemplates += @(
+        "temporal-dynamic-config.yaml",
+        "temporal-postgresql.yaml"
+    )
+}
 
 foreach ($template in $orderedTemplates) {
     Apply-Template -FileName $template
@@ -78,13 +84,16 @@ kubectl delete deployment grafana prometheus temporal-ui -n $Namespace --ignore-
 kubectl delete configmap prometheus-config grafana-datasources grafana-dashboard-provider grafana-dashboards -n $Namespace --ignore-not-found
 
 $deploymentTemplates = @(
-    "temporal.yaml",
     "inventory-service.yaml",
     "routing-engine.yaml",
     "order-api.yaml",
     "workflow-worker.yaml",
     "dashboard.yaml"
 )
+
+if ($DeployWorkflowInfra) {
+    $deploymentTemplates = @("temporal.yaml") + $deploymentTemplates
+}
 
 foreach ($template in $deploymentTemplates) {
     Apply-Template -FileName $template
@@ -95,10 +104,7 @@ if ($ApplySeedJob) {
     Apply-Template -FileName "seed-job.yaml"
 }
 
-
 Write-Host "Deployment submitted to namespace '$Namespace'."
 Write-Host "Check rollout progress with:"
 Write-Host "kubectl get pods -n $Namespace"
 Write-Host "kubectl get svc -n $Namespace"
-
-
