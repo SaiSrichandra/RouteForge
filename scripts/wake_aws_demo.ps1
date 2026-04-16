@@ -8,8 +8,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$DbPassword,
     [string]$RdsEndpoint = $env:RDS_ENDPOINT,
-    [int]$DesiredNodes = 3,
-    [int]$MaxNodes = 3,
+    [int]$DesiredNodes = 6,
+    [int]$MaxNodes = 6,
     [switch]$ApplySeedJob
 )
 

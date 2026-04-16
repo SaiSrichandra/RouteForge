@@ -4,7 +4,7 @@ param(
     [string]$Namespace = "dor",
     [string]$NodegroupName = "dor-dev-primary",
     [string]$RdsInstanceIdentifier = "dor-dev-postgres",
-    [int]$NodegroupMaxSize = 3,
+    [int]$NodegroupMaxSize = 6,
     [switch]$KeepRdsRunning
 )
 
