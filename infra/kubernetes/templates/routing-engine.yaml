@@ -4,7 +4,7 @@ metadata:
   name: routing-engine
   namespace: __NAMESPACE__
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
