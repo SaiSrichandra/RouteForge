@@ -10,6 +10,7 @@ from temporalio.exceptions import TemporalError
 
 from app.config import settings
 from app.db import Base, SessionLocal, engine, get_db
+from app.graphql_schema import graphql_router
 from app.models import Order, OrderItem, OrderStatus, Shipment, WorkflowEvent
 from app.observability import (
     ORDERS_CREATED_TOTAL,
@@ -36,6 +37,7 @@ if cors_origins:
     )
 
 app.middleware("http")(instrument_http)
+app.include_router(graphql_router, prefix="/graphql")
 
 
 @app.on_event("startup")
@@ -89,6 +91,21 @@ async def start_order_workflow(order_id: UUID, workflow_id: str) -> None:
         db.close()
 
 
+def _build_workflow_id() -> str:
+    return f"wf-{uuid.uuid4()}"
+
+
+def _record_workflow_start_queued(db: Session, order_id: UUID, workflow_id: str) -> None:
+    db.add(
+        WorkflowEvent(
+            order_id=order_id,
+            workflow_id=workflow_id,
+            event_type="workflow_start_queued",
+            payload={"task_queue": settings.temporal_task_queue},
+        )
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "order-api"}
@@ -100,7 +117,7 @@ async def create_order(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> Order:
-    workflow_id = f"wf-{uuid.uuid4()}"
+    workflow_id = _build_workflow_id()
     order = Order(
         customer_id=payload.customer_id,
         destination_zone=payload.destination_zone,
@@ -121,14 +138,7 @@ async def create_order(
         .one()
     )
 
-    db.add(
-        WorkflowEvent(
-            order_id=order.id,
-            workflow_id=workflow_id,
-            event_type="workflow_start_queued",
-            payload={"task_queue": settings.temporal_task_queue},
-        )
-    )
+    _record_workflow_start_queued(db, order.id, workflow_id)
     db.commit()
     background_tasks.add_task(start_order_workflow, order.id, workflow_id)
     return created

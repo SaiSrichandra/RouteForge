@@ -34,11 +34,13 @@ We model three warehouses because that is enough to create non-trivial routing b
 - creates correlation IDs and workflow IDs
 - starts Temporal workflows
 - exposes order status for the UI
+- serves both REST and GraphQL access patterns for order creation and lifecycle reads
 
 ### Inventory Service
 
 - owns warehouse and inventory data
 - supports snapshot reads
+- serves REST and GraphQL read paths for warehouses, inventory, and reservations
 - performs stock reservations and releases
 - tracks reservation state for workflow compensation
 
@@ -152,5 +154,4 @@ Optimization priorities:
 1. add the right database indexes
 2. keep inventory queries narrow
 3. make routing logic deterministic and testable
-4. consider Redis caching for hot inventory reads
-
+4. consider in-memory or distributed caching for hot inventory reads

@@ -142,3 +142,57 @@ def test_reservation_returns_conflict_on_insufficient_stock(tmp_path, monkeypatc
 
     assert response.status_code == 409
     assert "Insufficient stock" in response.json()["detail"]
+
+
+def test_graphql_warehouses_query_returns_seeded_warehouses(tmp_path, monkeypatch) -> None:
+    client, session_local = create_client(tmp_path, monkeypatch)
+    seed_inventory(session_local)
+
+    with client:
+        response = client.post(
+            "/graphql",
+            json={
+                "query": """
+                query Warehouses {
+                  warehouses {
+                    code
+                    name
+                    supportedZones
+                    currentLoad
+                  }
+                }
+                """
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]["warehouses"]
+    assert payload[0]["code"] == "NJ"
+    assert payload[1]["code"] == "TX"
+
+
+def test_graphql_inventory_query_filters_by_warehouse(tmp_path, monkeypatch) -> None:
+    client, session_local = create_client(tmp_path, monkeypatch)
+    seed_inventory(session_local)
+
+    with client:
+        response = client.post(
+            "/graphql",
+            json={
+                "query": """
+                query Inventory($warehouseCode: String) {
+                  inventory(warehouseCode: $warehouseCode, limit: 10) {
+                    warehouseCode
+                    sku
+                    availableQty
+                  }
+                }
+                """,
+                "variables": {"warehouseCode": "TX"},
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]["inventory"]
+    assert {row["warehouseCode"] for row in payload} == {"TX"}
+    assert {row["sku"] for row in payload} == {"SKU-001", "SKU-777"}

@@ -7,6 +7,7 @@ from sqlalchemy.sql import select
 
 from app.cache import inventory_read_cache
 from app.db import Base, engine, get_db
+from app.graphql_schema import graphql_router
 from app.models import Inventory, Reservation, ReservationStatus, Warehouse
 from app.observability import (
     INVENTORY_CACHE_REQUESTS_TOTAL,
@@ -29,6 +30,7 @@ app = FastAPI(
     description="Warehouse metadata and inventory lookup service.",
 )
 app.middleware("http")(instrument_http)
+app.include_router(graphql_router, prefix="/graphql")
 
 
 @app.on_event("startup")

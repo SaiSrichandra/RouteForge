@@ -1,6 +1,6 @@
 # Distributed Order Routing Platform
 
-Cloud-native fulfillment platform that accepts customer orders, chooses the best warehouse fulfillment strategy, orchestrates downstream steps with Temporal, exposes a React dashboard, and runs on AWS EKS with observability, CI/CD, and performance testing.
+Cloud-native fulfillment platform that accepts customer orders, chooses the best warehouse fulfillment strategy, orchestrates downstream steps with Temporal, exposes React frontends, and runs on AWS EKS with REST and GraphQL APIs, observability, CI/CD, and performance testing.
 
 ## Live Links
 
@@ -41,8 +41,8 @@ flowchart LR
 
 ## Services
 
-- `order-api`: accepts orders and exposes order, event, and shipment APIs
-- `inventory-service`: serves warehouse inventory and manages reservations/releases
+- `order-api`: accepts orders and exposes order, event, and shipment APIs over REST and GraphQL
+- `inventory-service`: serves warehouse inventory and reservation data over REST and GraphQL, and handles reservation/release writes
 - `routing-engine`: computes and scores fulfillment plans
 - `workflow-worker`: runs Temporal workflows, retries, and compensation logic
 - `dashboard`: web UI for orders, events, shipments, and system links
@@ -50,7 +50,7 @@ flowchart LR
 
 ## Tech Stack
 
-- Backend: FastAPI, SQLAlchemy, PostgreSQL, Temporal Python SDK
+- Backend: FastAPI, Strawberry GraphQL, SQLAlchemy, PostgreSQL, Temporal Python SDK
 - Frontend: React, TypeScript, Vite
 - Infra: Docker Compose, Kubernetes, Terraform, AWS EKS, RDS, ECR
 - Observability: Prometheus, Grafana
@@ -62,6 +62,7 @@ flowchart LR
 - Warehouse routing with single-warehouse, split-shipment, fallback, and infeasible-plan handling
 - Inventory reservation plus compensation on downstream failure
 - Temporal-based fulfillment orchestration with retries
+- GraphQL endpoints for order creation, order lifecycle reads, and inventory visibility
 - Workflow event history for debugging and UI visibility
 - Live cloud deployment on AWS EKS
 - Prometheus/Grafana observability
@@ -160,6 +161,8 @@ Useful APIs:
 - `GET /orders/{id}`
 - `GET /orders/{id}/events`
 - `GET /orders/{id}/shipments`
+- `POST /graphql` on `order-api`
+- `POST /graphql` on `inventory-service`
 
 ## Testing
 

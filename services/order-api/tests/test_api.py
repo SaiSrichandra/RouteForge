@@ -122,3 +122,97 @@ def test_create_order_marks_failure_when_workflow_start_fails(tmp_path, monkeypa
 
         events = db.query(WorkflowEvent).filter(WorkflowEvent.order_id == order.id).all()
         assert [event.event_type for event in events] == ["workflow_start_queued", "workflow_start_failed"]
+
+
+def test_graphql_create_order_mutation_persists_and_starts_workflow(tmp_path, monkeypatch) -> None:
+    client, session_local, temporal_client = create_client(tmp_path, monkeypatch)
+
+    mutation = """
+    mutation CreateOrder($payload: GraphQLOrderCreateInput!) {
+      createOrder(payload: $payload) {
+        id
+        customerId
+        destinationZone
+        status
+        workflowId
+        items {
+          sku
+          quantity
+          unitPrice
+        }
+      }
+    }
+    """
+
+    with client:
+        response = client.post(
+            "/graphql",
+            json={
+                "query": mutation,
+                "variables": {
+                    "payload": {
+                        "customerId": "graphql-success-001",
+                        "destinationZone": "east",
+                        "lineItems": [
+                            {"sku": "SKU-001", "quantity": 2, "unitPrice": 12.5},
+                            {"sku": "SKU-002", "quantity": 1, "unitPrice": 20.0},
+                        ],
+                    }
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]["createOrder"]
+    assert payload["status"] == "pending"
+    assert payload["customerId"] == "graphql-success-001"
+    assert len(payload["items"]) == 2
+    assert temporal_client.calls[0]["workflow_name"] == "OrderFulfillmentWorkflow"
+
+    with session_local() as db:
+        order = db.query(Order).filter(Order.id == uuid.UUID(payload["id"])).one()
+        assert order.customer_id == "graphql-success-001"
+        assert order.status == OrderStatus.pending
+
+        events = db.query(WorkflowEvent).filter(WorkflowEvent.order_id == order.id).order_by(WorkflowEvent.created_at.asc()).all()
+        assert [event.event_type for event in events] == ["workflow_start_queued", "workflow_started"]
+
+
+def test_graphql_orders_query_returns_created_orders(tmp_path, monkeypatch) -> None:
+    client, _session_local, _temporal_client = create_client(tmp_path, monkeypatch)
+
+    with client:
+        create_response = client.post(
+            "/orders",
+            json={
+                "customer_id": "graphql-query-001",
+                "destination_zone": "east",
+                "line_items": [{"sku": "SKU-010", "quantity": 1, "unit_price": "18.00"}],
+            },
+        )
+        assert create_response.status_code == 201
+
+        response = client.post(
+            "/graphql",
+            json={
+                "query": """
+                query RecentOrders {
+                  orders(limit: 5) {
+                    customerId
+                    destinationZone
+                    status
+                    items {
+                      sku
+                    }
+                  }
+                }
+                """
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]["orders"]
+    assert payload[0]["customerId"] == "graphql-query-001"
+    assert payload[0]["destinationZone"] == "east"
+    assert payload[0]["status"] == "pending"
+    assert payload[0]["items"][0]["sku"] == "SKU-010"

@@ -171,16 +171,6 @@ if ($ApplySeedJob) {
     Apply-Template -FileName "seed-job.yaml"
 }
 
-kubectl rollout restart deployment temporal -n $Namespace
-kubectl rollout restart deployment temporal-ui -n $Namespace
-kubectl rollout restart deployment prometheus -n $Namespace
-kubectl rollout restart deployment grafana -n $Namespace
-kubectl rollout restart deployment inventory-service -n $Namespace
-kubectl rollout restart deployment routing-engine -n $Namespace
-kubectl rollout restart deployment order-api -n $Namespace
-kubectl rollout restart deployment workflow-worker -n $Namespace
-kubectl rollout restart deployment dashboard -n $Namespace
-
 Write-Host "Deployment submitted to namespace '$Namespace'."
 if ($TemporalUiPublicUrl) {
     Write-Host "Temporal UI: $TemporalUiPublicUrl"
