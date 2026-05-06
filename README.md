@@ -2,7 +2,7 @@
 
 Cloud-native fulfillment platform that accepts customer orders, chooses the best warehouse fulfillment strategy, orchestrates downstream steps with Temporal, exposes React frontends, and runs on AWS EKS with REST and GraphQL APIs, observability, CI/CD, and performance testing.
 
-## Live Links
+## Live Links (Currently down due to lack of Resources)
 
 - Dashboard: `http://a9e83f51b01c94702826fd8e8bb7e5cb-660024319.us-east-1.elb.amazonaws.com`
 - Order Console: `http://routeforge-order-console-565582985513.s3-website.us-east-2.amazonaws.com`
