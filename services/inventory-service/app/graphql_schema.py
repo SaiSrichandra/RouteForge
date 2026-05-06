@@ -6,13 +6,13 @@ from uuid import UUID
 
 import strawberry
 from fastapi import Depends
+from sqlalchemy.orm import Session, selectinload
 from strawberry.fastapi import BaseContext, GraphQLRouter
 
 from app.cache import inventory_read_cache
 from app.db import get_db
 from app.models import Inventory, Reservation, Warehouse
 from app.observability import INVENTORY_CACHE_REQUESTS_TOTAL
-from sqlalchemy.orm import Session, selectinload
 
 
 @strawberry.type
